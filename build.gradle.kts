@@ -8,7 +8,7 @@ plugins {
 
 android {
     namespace = "com.infipush"
-    compileSdk = 37
+    compileSdk = 36
 
     defaultConfig {
         minSdk = 24
@@ -49,7 +49,7 @@ afterEvaluate {
                 from(components["release"])
                 groupId = "com.github.infinity-verse"
                 artifactId = "infipush-sdk"
-                version = "1.0.0"
+                version = "1.0.1"
             }
         }
         repositories {
