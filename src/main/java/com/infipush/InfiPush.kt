@@ -235,14 +235,14 @@ object InfiPush {
                 ApiClient.deviceService(config.baseUrl, config.appId).registerDevice(payload)
                 prefs().edit().putBoolean(KEY_REGISTERED, true).apply()
                 Log.i(TAG, "Device registered successfully (refresh=$isRefresh)")
-                Handler(Looper.getMainLooper()).post {
+                /*Handler(Looper.getMainLooper()).post {
                     Toast.makeText(appContext, "✅ Device Registered to Backend!", Toast.LENGTH_SHORT).show()
-                }
+                }*/
             } catch (e: Exception) {
                 Log.e(TAG, "Device registration failed: ${e.message}", e)
-                Handler(Looper.getMainLooper()).post {
+                /*Handler(Looper.getMainLooper()).post {
                     Toast.makeText(appContext, "❌ API Error: ${e.message}", Toast.LENGTH_LONG).show()
-                }
+                }*/
             }
         }
     }
