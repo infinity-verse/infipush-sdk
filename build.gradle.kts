@@ -49,7 +49,7 @@ afterEvaluate {
                 from(components["release"])
                 groupId = "com.github.infinity-verse"
                 artifactId = "infipush-sdk"
-                version = "1.0.5"
+                version = "1.0.6"
             }
         }
         repositories {
@@ -82,3 +82,4 @@ dependencies {
 
     implementation("com.google.firebase:firebase-messaging:25.1.0")
 }
+ 
