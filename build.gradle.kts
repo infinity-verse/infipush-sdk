@@ -52,6 +52,7 @@ afterEvaluate {
                 version = "1.0.7"
             }
         }
+        
         repositories {
             maven {
                 name = "GitHubPackages"
