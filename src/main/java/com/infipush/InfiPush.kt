@@ -43,7 +43,7 @@ object InfiPush {
     private var currentLatitude: Double? = null
     private var currentLongitude: Double? = null
 
-    internal lateinit var config: InfiPushConfig
+    internal var config: InfiPushConfig = InfiPushConfig()
         private set
 
     internal lateinit var appContext: Context
