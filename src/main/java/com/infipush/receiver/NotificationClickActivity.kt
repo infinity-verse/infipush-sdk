@@ -49,24 +49,6 @@ class NotificationClickActivity : Activity() {
             }
         }
 
-        // 1. Track click asynchronously (fire-and-forget)
-        scope.launch {
-            try {
-                val token = if (tokenFromIntent.isNotBlank()) tokenFromIntent else {
-                    getSharedPreferences("infipush_prefs", Context.MODE_PRIVATE)
-                        .getString("device_fcm_token", "") ?: ""
-                }
-
-                if (notifId.isNotBlank() && token.isNotBlank()) {
-                    ApiClient
-                        .trackingService(InfiPush.config.baseUrl, InfiPush.config.appId)
-                        .trackClick(targetUrl, notifId, token)
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Click tracking failed: ${e.message}")
-            }
-        }
-
         // 2. Open launch URL directly if present, otherwise bring host app to the foreground
         if (targetUrl.isNotBlank()) {
             val uri = Uri.parse(targetUrl)
@@ -83,8 +65,27 @@ class NotificationClickActivity : Activity() {
             bringAppToForeground(this, "")
         }
 
-        // 3. Dismiss this transparent activity immediately
-        finish()
+        // 1. Track click asynchronously, then finish the activity
+        scope.launch {
+            try {
+                val token = if (tokenFromIntent.isNotBlank()) tokenFromIntent else {
+                    getSharedPreferences("infipush_prefs", Context.MODE_PRIVATE)
+                        .getString("device_fcm_token", "") ?: ""
+                }
+
+                if (notifId.isNotBlank() && token.isNotBlank()) {
+                    ApiClient
+                        .trackingService(InfiPush.config.baseUrl, InfiPush.config.appId)
+                        .trackClick(targetUrl, notifId, token)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Click tracking failed: ${e.message}")
+            } finally {
+                runOnUiThread {
+                    finish()
+                }
+            }
+        }
     }
 
     private fun bringAppToForeground(context: Context, url: String) {
