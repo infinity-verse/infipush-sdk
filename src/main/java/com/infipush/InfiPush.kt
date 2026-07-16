@@ -111,6 +111,51 @@ object InfiPush {
                     registerDevice()
                 }
                 foregroundActivitiesCount++
+
+                // Intercept notification click extras from background system notification launcher intents
+                val intent = activity.intent
+                if (intent != null) {
+                    val notifId = intent.getStringExtra("notificationId") ?: intent.getStringExtra("extra_notif_id")
+                    val token = intent.getStringExtra("deviceToken") ?: intent.getStringExtra("extra_token")
+                    val launchUrl = intent.getStringExtra("launchUrl") ?: intent.getStringExtra("extra_launch_url")
+                    
+                    if (!notifId.isNullOrBlank()) {
+                        // Clear the intent extras to prevent duplicate tracking on configuration changes/restarts
+                        intent.removeExtra("notificationId")
+                        intent.removeExtra("extra_notif_id")
+                        
+                        var targetUrl = launchUrl ?: ""
+                        // Try to extract the final direct target URL from the tracking URL if present
+                        if (targetUrl.startsWith("http") && targetUrl.contains("/api/tracking/click-link")) {
+                            try {
+                                val parsedUri = android.net.Uri.parse(targetUrl)
+                                val redirectUrl = parsedUri.getQueryParameter("url")
+                                if (!redirectUrl.isNullOrBlank()) {
+                                    targetUrl = redirectUrl
+                                }
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Error parsing target URL from intent launchUrl: ${e.message}")
+                            }
+                        }
+
+                        Log.d(TAG, "Intercepted click from intent — id=$notifId url=$targetUrl")
+                        
+                        scope.launch {
+                            try {
+                                val finalToken = if (!token.isNullOrBlank()) token else {
+                                    prefs().getString(KEY_DEVICE_TOKEN, "") ?: ""
+                                }
+                                if (finalToken.isNotBlank()) {
+                                    ApiClient
+                                        .trackingService(config.baseUrl, config.appId)
+                                        .trackClick(targetUrl, notifId, finalToken)
+                                }
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Background intent click tracking failed: ${e.message}")
+                            }
+                        }
+                    }
+                }
             }
 
             override fun onActivityStopped(activity: android.app.Activity) {
@@ -134,6 +179,93 @@ object InfiPush {
         })
 
         Log.i(TAG, "InfiPush SDK initialised — server: ${config.baseUrl}")
+        initializeDynamicFirebase(config)
+    }
+
+    private fun getFirebaseSenderId(): String? {
+        return try {
+            val firebaseAppClass = Class.forName("com.google.firebase.FirebaseApp")
+            val getInstanceMethod = firebaseAppClass.getMethod("getInstance")
+            val firebaseAppInstance = getInstanceMethod.invoke(null)
+            val getOptionsMethod = firebaseAppClass.getMethod("getOptions")
+            val optionsInstance = getOptionsMethod.invoke(firebaseAppInstance)
+            val optionsClass = Class.forName("com.google.firebase.FirebaseOptions")
+            val getGcmSenderIdMethod = optionsClass.getMethod("getGcmSenderId")
+            getGcmSenderIdMethod.invoke(optionsInstance) as String?
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun initializeDynamicFirebase(config: InfiPushConfig) {
+        scope.launch {
+            try {
+                Log.d(TAG, "Fetching dynamic Firebase params for package: ${appContext.packageName}...")
+                val service = ApiClient.configService(config.baseUrl, config.appId)
+                val params = service.getAndroidParams(appContext.packageName)
+
+                val projectNumber = params.project_number
+                val projectId = params.project_id
+                val fcmAppId = params.app_id_fcm
+                val apiKey = params.api_key
+
+                if (!projectNumber.isNullOrEmpty() && !fcmAppId.isNullOrEmpty() && !apiKey.isNullOrEmpty()) {
+                    Log.i(TAG, "Dynamic config fetched: Sender ID=$projectNumber, Project ID=$projectId. Initializing custom FirebaseApp...")
+                    
+                    val options = com.google.firebase.FirebaseOptions.Builder()
+                        .setGcmSenderId(projectNumber)
+                        .setApplicationId(fcmAppId)
+                        .setProjectId(projectId)
+                        .setApiKey(apiKey)
+                        .build()
+
+                    val appName = "infipush-${config.appId}"
+                    
+                    // Check if already initialized to avoid duplicate exception
+                    val firebaseApp = try {
+                        com.google.firebase.FirebaseApp.getInstance(appName)
+                    } catch (e: Exception) {
+                        com.google.firebase.FirebaseApp.initializeApp(appContext, options, appName)
+                    }
+
+                    // Retrieve token from this dynamic instance
+                    firebaseApp.get(com.google.firebase.messaging.FirebaseMessaging::class.java).token
+                        .addOnCompleteListener { task ->
+                            if (task.isSuccessful && task.result != null) {
+                                val token = task.result
+                                Log.i(TAG, "Dynamic Firebase token fetched successfully: $token")
+                                onNewToken(token)
+                            } else {
+                                Log.e(TAG, "Failed to fetch token from dynamic FirebaseApp instance, falling back...")
+                                fallbackToDefaultFirebase()
+                            }
+                        }
+                } else {
+                    Log.w(TAG, "Server returned incomplete dynamic config. Falling back to default FirebaseApp.")
+                    fallbackToDefaultFirebase()
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to initialize dynamic Firebase config: ${e.message}. Falling back to default FirebaseApp.", e)
+                fallbackToDefaultFirebase()
+            }
+        }
+    }
+
+    private fun fallbackToDefaultFirebase() {
+        try {
+            com.google.firebase.messaging.FirebaseMessaging.getInstance().token
+                .addOnCompleteListener { task ->
+                    if (task.isSuccessful && task.result != null) {
+                        val token = task.result
+                        Log.i(TAG, "Default Firebase token fetched successfully: $token")
+                        onNewToken(token)
+                    } else {
+                        Log.e(TAG, "Failed to fetch token from default FirebaseApp.")
+                    }
+                }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error during fallback to default FirebaseApp: ${e.message}")
+        }
     }
 
     // ──────────────────────────────────────────────────────────────
